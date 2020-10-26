@@ -874,14 +874,14 @@ run from any cli: <br>`curl -X PURGE https://yourwebsite.com/`.
 2. How to reload varnish?<br>
 `docker container exec proxy varnishreload`
 3. Which varnish commands are allowed?
-    - varnishadm     
-    - varnishd      
-    - varnishhist    
-    - varnishlog     
-    - varnishncsa    
-    - varnishreload  
-    - varnishstat    
-    - varnishtest    
+    - varnishadm
+    - varnishd
+    - varnishhist
+    - varnishlog
+    - varnishncsa
+    - varnishreload
+    - varnishstat
+    - varnishtest
     - varnishtop
 4. How to reload Nginx?<br>
 `docker exec Nginx nginx -t`<br>
@@ -1077,7 +1077,14 @@ docker-compose up -d adminer
 
 2 - Open your browser and visit the localhost on port **8081**:  `http://localhost:8081`
 
-**Note:** We've locked Adminer to version 4.3.0 as at the time of writing [it contained a major bug](https://sourceforge.net/p/adminer/bugs-and-features/548/) preventing PostgreSQL users from logging in. If that bug is fixed (or if you're not using PostgreSQL) feel free to set Adminer to the latest version within [the Dockerfile](https://github.com/laradock/laradock/blob/master/adminer/Dockerfile#L1): `FROM adminer:latest`
+#### Additional Notes
+
+- You can load plugins in the `ADM_PLUGINS` variable in the `.env` file. If a plugin requires parameters to work correctly you will need to add a custom file to the container. [Find more info in section 'Loading plugins'](https://hub.docker.com/_/adminer).
+
+- You can choose a design in the `ADM_DESIGN` variable in the `.env` file. [Find more info in section 'Choosing a design'](https://hub.docker.com/_/adminer).
+
+- You can specify the default host with the `ADM_DEFAULT_SERVER` variable in the `.env` file. This is useful if you are connecting to an external server or a docker container named something other than the default `mysql`.
+
 
 
 
@@ -1212,7 +1219,7 @@ docker-compose up -d elasticsearch
 ```bash
 docker-compose exec elasticsearch /usr/share/elasticsearch/bin/plugin install {plugin-name}
 ```
-For ElasticSearch 5.0 and above, the previous "plugin" command has been renamed to "elasticsearch-plguin". 
+For ElasticSearch 5.0 and above, the previous "plugin" command has been renamed to "elasticsearch-plguin".
 Use the following instead:
 
 ```bash
@@ -2283,6 +2290,26 @@ For configuration information, visit the [bash-git-prompt repository](https://gi
 5 - Use it `docker-compose exec --user=laradock workspace zsh`
 
 **Note** You can configure Oh My ZSH by editing the `/home/laradock/.zshrc` in running container.
+
+> With the ZSH autosuggestions plugin.
+
+[ZSH autosuggestions plugin](https://github.com/zsh-users/zsh-autosuggestions) suggests commands as you type based on history and completions.
+
+1 - Enable ZSH as described previously
+
+2 - Set `SHELL_OH_MY_ZSH_AUTOSUGESTIONS` to `true`
+
+3 - Rebuild and use ZSH as described previously
+
+> With bash aliases loaded.
+
+Laradock provides aliases through the `aliases.sh` file located in the `laradock/workspace` directory. You can load it into ZSH.
+
+1 - Enable ZSH as described previously
+
+2 - Set `SHELL_OH_MY_ZSH_ALIASES` to `true`
+
+3 - Rebuild and enjoy aliases
 
 <br>
 <a name="phpstorm-debugging"></a>
