@@ -270,6 +270,8 @@ services:
         - ./php-fpm/php${PHP_VERSION}.ini:/usr/local/etc/php/php.ini
         - ${APP_CODE_PATH_HOST}:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
         - docker-in-docker:/certs/client
+      ports:
+        - "9003:9003"
       expose:
         - "9000"
       extra_hosts:
@@ -745,6 +747,24 @@ services:
       depends_on:
         - php-fpm
       networks:
+        - backend
+
+### Mercure #############################################
+    mercure:
+      build: ./mercure
+      ports:
+        - "${MERCURE_NODE_HOST_HTTP_PORT}:80"
+        - "${MERCURE_NODE_HOST_HTTPS_PORT}:443"
+      privileged: true
+      environment:
+        - MERCURE_PUBLISHER_JWT_KEY=${MERCURE_PUBLISHER_JWT_KEY}
+        - MERCURE_SUBSCRIBER_JWT_KEY=${MERCURE_SUBSCRIBER_JWT_KEY}
+        - DEBUG=${MERCURE_DEBUG}
+        - SERVER_NAME=${MERCURE_SERVER_NAME}
+        - MERCURE_EXTRA_DIRECTIVES=cors_allowed_origins *\npublish_allowed_origins http://localhost:${MERCURE_NODE_HOST_HTTP_PORT} https://localhost:${MERCURE_NODE_HOST_HTTP_PORT}
+      hostname: laradock-mercure
+      networks:
+        - frontend
         - backend
 
 ### Cassandra ############################################
