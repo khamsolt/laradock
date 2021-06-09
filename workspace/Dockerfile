@@ -23,18 +23,25 @@ ARG LARADOCK_PHP_VERSION
 # Set Environment Variables
 ENV DEBIAN_FRONTEND noninteractive
 
-# If you're in China, or you need to change sources, will be set CHANGE_SOURCE to true in .env.
-
-ARG CHANGE_SOURCE=false
-RUN if [ ${CHANGE_SOURCE} = true ]; then \
-    # Change application source from deb.debian.org to aliyun source
-    sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list && \
-    sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list && \
-    sed -i 's/security-cdn.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list \
-;fi
-
 # Start as root
 USER root
+
+###########################################################################
+# If you're in China, or you need to change sources, will be set CHANGE_SOURCE to true in .env.
+###########################################################################
+
+ARG CHANGE_SOURCE=false
+ARG UBUNTU_SOURCE=aliyun
+COPY ./sources.sh /tmp/sources.sh
+RUN if [ ${CHANGE_SOURCE} = true ]; then \
+    # Change application source from deb.debian.org to aliyun source
+    sed -i 's/deb.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list; \
+    sed -i 's/security.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list; \
+    sed -i 's/security-cdn.debian.org/mirrors.tuna.tsinghua.edu.cn/' /etc/apt/sources.list; \
+    chmod +x /tmp/sources.sh; \
+    /bin/sh -c /tmp/sources.sh; \
+  fi; \
+  rm -rf /tmp/sources.sh
 
 ###########################################################################
 # Laradock non-root user:
@@ -45,16 +52,6 @@ ARG PUID=1000
 ENV PUID ${PUID}
 ARG PGID=1000
 ENV PGID ${PGID}
-
-ARG CHANGE_SOURCE=false
-ARG UBUNTU_SOURCE
-COPY ./sources.sh /tmp/sources.sh
-
-RUN if [ ${CHANGE_SOURCE} = true ]; then \
-    chmod +x /tmp/sources.sh && \
-    /bin/sh -c /tmp/sources.sh && \
-    rm -rf /tmp/sources.sh \
-;fi
 
 # always run apt update when start and after add new source list, then clean up at end.
 RUN set -xe; \
@@ -150,7 +147,12 @@ RUN echo "" >> ~/.bashrc && \
 # Update composer
 ARG COMPOSER_VERSION=2
 ENV COMPOSER_VERSION ${COMPOSER_VERSION}
-RUN composer self-update --${COMPOSER_VERSION}
+RUN set -eux; \
+      if [ "$COMPOSER_VERSION" = "1" ] || [ "$COMPOSER_VERSION" = "2" ]; then \
+          composer self-update --${COMPOSER_VERSION}; \
+      else \
+          composer self-update ${COMPOSER_VERSION}; \
+      fi
 
 USER laradock
 
@@ -547,22 +549,22 @@ RUN if [ ${INSTALL_PHPREDIS} = true ]; then \
 
 ARG INSTALL_SWOOLE=false
 
-RUN if [ ${INSTALL_SWOOLE} = true ]; then \
+RUN set -eux; \
+    if [ ${INSTALL_SWOOLE} = true ]; then \
       # Install Php Swoole Extension
       if   [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "50600" ]; then \
-        pecl install swoole-2.0.10; \
+        echo '' | pecl -q install swoole-2.0.10; \
       elif [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "70000" ]; then \
-        pecl install swoole-4.3.5; \
+        echo '' | pecl -q install swoole-4.3.5; \
       elif [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "70100" ]; then \
-        pecl install swoole-4.5.11; \
+        echo '' | pecl -q install swoole-4.5.11; \
       else \
-        pecl install swoole; \
+        echo '' | pecl -q install swoole; \
       fi; \
-    fi; \
-    echo "extension=swoole.so" >> /etc/php/${LARADOCK_PHP_VERSION}/mods-available/swoole.ini && \
-    ln -s /etc/php/${LARADOCK_PHP_VERSION}/mods-available/swoole.ini /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-swoole.ini \
-    && php -m | grep -q 'swoole' \
-;fi
+      echo "extension=swoole.so" >> /etc/php/${LARADOCK_PHP_VERSION}/mods-available/swoole.ini; \
+      ln -s /etc/php/${LARADOCK_PHP_VERSION}/mods-available/swoole.ini /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-swoole.ini; \
+      php -m | grep -q 'swoole'; \
+    fi
 
 ###########################################################################
 # Taint EXTENSION
@@ -1040,7 +1042,7 @@ ARG INSTALL_MSSQL=false
 RUN set -eux; \
   if [ ${INSTALL_MSSQL} = true ]; then \
     if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
-      apt-get -y install php5.6-sybase freetds-bin freetds-common libsybdb5 \
+      apt-get install -yqq php5.6-sybase freetds-bin freetds-common libsybdb5 \
       && php -m | grep -q 'mssql' \
       && php -m | grep -q 'pdo_dblib' \
     ;else \
@@ -1049,24 +1051,26 @@ RUN set -eux; \
       #  https://github.com/Microsoft/msphpsql/wiki/Install-and-configuration
       ###########################################################################
       curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-      curl https://packages.microsoft.com/config/ubuntu/16.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
+      curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
       apt-get update -yqq && \
-      ACCEPT_EULA=Y apt-get install -y msodbcsql17 mssql-tools unixodbc unixodbc-dev libgss3 odbcinst locales && \
+      ACCEPT_EULA=Y apt-get install -yqq msodbcsql17 mssql-tools unixodbc unixodbc-dev libgss3 odbcinst locales && \
       ln -sfn /opt/mssql-tools/bin/sqlcmd /usr/bin/sqlcmd && \
       ln -sfn /opt/mssql-tools/bin/bcp /usr/bin/bcp && \
       echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
       locale-gen && \
-      if [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "70000" ]; then \
-        pecl install sqlsrv-5.3.0 pdo_sqlsrv-5.3.0 \
-      ;elif [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "70100" ]; then \
-        pecl install sqlsrv-5.6.1 pdo_sqlsrv-5.6.1 \
+      if [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "2" ]; then \
+        pecl install pdo_sqlsrv-5.8.1 sqlsrv-5.8.1 \
+      ;elif [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "1" ]; then \
+        pecl install pdo_sqlsrv-5.6.1 sqlsrv-5.6.1 \
+      ;elif [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "0" ]; then \
+        pecl install pdo_sqlsrv-5.3.0 sqlsrv-5.3.0 \
       ;else \
-        pecl install sqlsrv pdo_sqlsrv \
+        pecl install pdo_sqlsrv sqlsrv \
       ;fi && \
       echo "extension=sqlsrv.so"     > /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-sqlsrv.ini && \
-      echo "extension=pdo_sqlsrv.so" > /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-pdo_sqlsrv.ini \
-      && php -m | grep -q 'sqlsrv' \
-      && php -m | grep -q 'pdo_sqlsrv' \
+      echo "extension=pdo_sqlsrv.so" > /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-pdo_sqlsrv.ini && \
+      php -m | grep -q 'sqlsrv' && \
+      php -m | grep -q 'pdo_sqlsrv' \
     ;fi \
   ;fi
 
@@ -1125,7 +1129,10 @@ RUN if [ ${INSTALL_SYMFONY} = true ]; then \
 ARG INSTALL_PYTHON=false
 
 RUN if [ ${INSTALL_PYTHON} = true ]; then \
-  apt-get -y install python python-pip python-dev build-essential  \
+  apt-get -y install python python-dev build-essential  \
+  && curl https://bootstrap.pypa.io/pip/2.7/get-pip.py -o get-pip.py  \
+  && python get-pip.py  \
+  && rm get-pip.py  \
   && python -m pip install --upgrade pip  \
   && python -m pip install --upgrade virtualenv \
 ;fi
@@ -1137,7 +1144,10 @@ RUN if [ ${INSTALL_PYTHON} = true ]; then \
 ARG INSTALL_PYTHON3=false
 
 RUN if [ ${INSTALL_PYTHON3} = true ]; then \
-  apt-get -y install python3 python3-pip python3-dev build-essential  \
+  apt-get -y install python3 python3-dev build-essential  \
+  && curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py  \
+  && python3 get-pip.py  \
+  && rm get-pip.py  \
   && python3 -m pip install --upgrade --force-reinstall pip  \
   && python3 -m pip install --upgrade virtualenv \
 ;fi
@@ -1203,7 +1213,8 @@ RUN if [ ${INSTALL_IMAGEMAGICK} = true ]; then \
       pecl install imagick; \
     fi && \
     echo "extension=imagick.so" >> /etc/php/${LARADOCK_PHP_VERSION}/mods-available/imagick.ini && \
-    ln -s /etc/php/${LARADOCK_PHP_VERSION}/mods-available/imagick.ini /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-imagick.ini \
+    ln -s /etc/php/${LARADOCK_PHP_VERSION}/mods-available/imagick.ini /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/20-imagick.ini && \
+    php -m | grep -q 'imagick' \
 ;fi
 
 ###########################################################################
@@ -1221,6 +1232,18 @@ RUN if [ ${INSTALL_TERRAFORM} = true ]; then \
     && mv terraform /usr/local/bin \
     && rm terraform_0.10.6_linux_amd64.zip \
 ;fi
+
+###########################################################################
+# Memcached Dependecies:
+###########################################################################
+
+ARG INSTALL_MEMCACHED=false
+
+RUN if [ ${INSTALL_MEMCACHED} = true ]; then \
+  apt-get -y install php${LARADOCK_PHP_VERSION}-igbinary \
+  && apt-get -y install php${LARADOCK_PHP_VERSION}-memcached \
+;fi
+
 ###########################################################################
 # pgsql client
 ###########################################################################
@@ -1576,6 +1599,55 @@ RUN if [ ${SHELL_OH_MY_ZSH} = true ]; then \
     echo "source ~/aliases.sh" >> ~/.zshrc && \
 	  echo "" >> ~/.zshrc \
 ;fi
+
+USER root
+
+
+###########################################################################
+# PHP DECIMAL:
+###########################################################################
+
+USER root
+
+ARG INSTALL_PHPDECIMAL=false
+
+RUN if [ ${INSTALL_PHPDECIMAL} = true ]; then \
+    if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+      echo 'decimal not support PHP 5.6'; \
+    else \
+      apt-get install -yqq libmpdec-dev \
+      && pecl install decimal \
+      && echo "extension=decimal.so" >> /etc/php/${LARADOCK_PHP_VERSION}/mods-available/decimal.ini \
+      && ln -s /etc/php/${LARADOCK_PHP_VERSION}/mods-available/decimal.ini /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/30-decimal.ini \
+      && php -m | grep -q 'decimal' \
+    ;fi \
+;fi
+
+###########################################################################
+# zookeeper
+###########################################################################
+ARG INSTALL_ZOOKEEPER=false
+
+RUN set -eux; \
+    if [ ${INSTALL_ZOOKEEPER} = true ]; then \
+    apt install -yqq libzookeeper-mt-dev; \
+    if [ $(php -r "echo PHP_MAJOR_VERSION;") = "8" ]; then \
+      curl -L -o /tmp/php-zookeeper.tar.gz https://github.com/php-zookeeper/php-zookeeper/archive/master.tar.gz; \
+      mkdir -p /tmp/php-zookeeper; \
+      tar -C /tmp/php-zookeeper -zxvf /tmp/php-zookeeper.tar.gz --strip 1; \
+      cd /tmp/php-zookeeper; \
+      phpize && ./configure && make && make install;\
+    else \
+      if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+        pecl install zookeeper-0.5.0; \
+      else \
+        pecl install zookeeper-0.7.2; \
+      fi; \
+    fi; \
+    echo "extension=zookeeper.so" >> /etc/php/${LARADOCK_PHP_VERSION}/mods-available/zookeeper.ini; \
+    ln -s /etc/php/${LARADOCK_PHP_VERSION}/mods-available/zookeeper.ini /etc/php/${LARADOCK_PHP_VERSION}/cli/conf.d/30-zookeeper.ini; \
+    php -m | grep -q 'zookeeper'; \
+    fi
 
 #
 #--------------------------------------------------------------------------

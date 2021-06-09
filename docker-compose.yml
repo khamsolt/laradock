@@ -165,8 +165,11 @@ services:
           - INSTALL_GNU_PARALLEL=${WORKSPACE_INSTALL_GNU_PARALLEL}
           - INSTALL_LNAV=${WORKSPACE_INSTALL_LNAV}
           - INSTALL_PROTOC=${WORKSPACE_INSTALL_PROTOC}
+          - INSTALL_PHPDECIMAL=${WORKSPACE_INSTALL_PHPDECIMAL}
+          - INSTALL_ZOOKEEPER=${WORKSPACE_INSTALL_ZOOKEEPER}
           - PROTOC_VERSION=${WORKSPACE_PROTOC_VERSION}
           - INSTALL_DOCKER_CLIENT=${WORKSPACE_INSTALL_DOCKER_CLIENT}
+          - INSTALL_MEMCACHED=${WORKSPACE_INSTALL_MEMCACHED}
           - http_proxy
           - https_proxy
           - no_proxy
@@ -206,6 +209,7 @@ services:
           - LARADOCK_PHP_VERSION=${PHP_VERSION}
           - LARADOCK_PHALCON_VERSION=${PHALCON_VERSION}
           - INSTALL_BZ2=${PHP_FPM_INSTALL_BZ2}
+          - INSTALL_ENCHANT=${PHP_FPM_INSTALL_ENCHANT}
           - INSTALL_GMP=${PHP_FPM_INSTALL_GMP}
           - INSTALL_GNUPG=${PHP_FPM_INSTALL_GNUPG}
           - INSTALL_XDEBUG=${PHP_FPM_INSTALL_XDEBUG}
@@ -261,6 +265,8 @@ services:
           - INSTALL_WKHTMLTOPDF=${PHP_FPM_INSTALL_WKHTMLTOPDF}
           - INSTALL_XHPROF=${PHP_FPM_INSTALL_XHPROF}
           - INSTALL_XMLRPC=${PHP_FPM_INSTALL_XMLRPC}
+          - INSTALL_PHPDECIMAL=${PHP_FPM_INSTALL_PHPDECIMAL}
+          - INSTALL_ZOOKEEPER=${PHP_FPM_INSTALL_ZOOKEEPER}
           - DOWNGRADE_OPENSSL_TLS_AND_SECLEVEL=${PHP_DOWNGRADE_OPENSSL_TLS_AND_SECLEVEL}
           - PUID=${PHP_FPM_PUID}
           - PGID=${PHP_FPM_PGID}
@@ -310,9 +316,11 @@ services:
           - INSTALL_IMAGEMAGICK=${PHP_WORKER_INSTALL_IMAGEMAGICK}
           - INSTALL_GMP=${PHP_WORKER_INSTALL_GMP}
           - INSTALL_GNUPG=${PHP_WORKER_INSTALL_GNUPG}
+          - INSTALL_LDAP=${PHP_WORKER_INSTALL_LDAP}
           - INSTALL_PGSQL=${PHP_WORKER_INSTALL_PGSQL}
           - INSTALL_MONGO=${PHP_WORKER_INSTALL_MONGO}
           - INSTALL_BCMATH=${PHP_WORKER_INSTALL_BCMATH}
+          - INSTALL_MEMCACHED=${PHP_WORKER_INSTALL_MEMCACHED}
           - INSTALL_OCI8=${PHP_WORKER_INSTALL_OCI8}
           - INSTALL_PHALCON=${PHP_WORKER_INSTALL_PHALCON}
           - INSTALL_SOAP=${PHP_WORKER_INSTALL_SOAP}
@@ -352,6 +360,7 @@ services:
           - INSTALL_GD=${LARAVEL_HORIZON_INSTALL_GD}
           - INSTALL_GMP=${LARAVEL_HORIZON_INSTALL_GMP}
           - INSTALL_GNUPG=${LARAVEL_HORIZON_INSTALL_GNUPG}
+          - INSTALL_LDAP=${LARAVEL_HORIZON_INSTALL_LDAP}
           - INSTALL_IMAGEMAGICK=${LARAVEL_HORIZON_INSTALL_IMAGEMAGICK}
           - INSTALL_PGSQL=${PHP_FPM_INSTALL_PGSQL}
           - INSTALL_ZIP_ARCHIVE=${LARAVEL_HORIZON_INSTALL_ZIP_ARCHIVE}
@@ -1391,6 +1400,7 @@ services:
       volumes:
         - ${DATA_PATH_HOST}/gitlab/runner:/etc/gitlab-runner
         - /var/run/docker.sock:/var/run/docker.sock:rw
+      restart: always
 
 ### JupyterHub #########################################
     jupyterhub:
@@ -1519,6 +1529,18 @@ services:
         - ${DATA_PATH_HOST}/metabase-data:/metabase-data
       networks:
         - backend
+
+### Weaver (Athena PDF) #################################################
+    weaver:
+      image: arachnysdocker/athenapdf-service
+      ports:
+        - "8080:8080"
+      env_file:
+        - ./weaver/conf/sample.env
+      networks:
+        - backend
+      depends_on:
+        - workspace
 
 ### IDE-THEIA ################################################
     ide-theia:
@@ -1883,6 +1905,24 @@ services:
       volumes:
         - ${DATA_PATH_HOST}/Confluence:/var/atlassian/application-data
 
+### SWAGGER EDITOR ############################################
+    swagger-editor:
+      build: ./swagger-editor
+      ports:
+        - ${SWAGGER_EDITOR_PORT}:8080
+      networks:
+        - backend
+
+### SWAGGER UI ################################################
+    swagger-ui:
+      build: ./swagger-ui
+      environment:
+        - API_URL=${SWAGGER_API_URL}
+      ports:
+        - ${SWAGGER_UI_PORT}:8080
+      networks:
+        - backend
+
 ### tomcat ####################################################
     tomcat:
       container_name: tomcat
@@ -1914,3 +1954,47 @@ services:
         - ./react:/usr/src/app/react
         - /usr/src/app/react/node_modules
 
+### kafka ####################################################
+    kafka:
+      image: wurstmeister/kafka
+      ports:
+        - "9092:9092"
+      environment:
+        KAFKA_BROKER_ID: 1
+        KAFKA_ADVERTISED_HOST_NAME: 127.0.0.1
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+        KAFKA_MESSAGE_MAX_BYTES: 2000000
+        KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      volumes:
+        - ${DATA_PATH_HOST}/kafka:/kafka
+        - /var/run/docker.sock:/var/run/docker.sock
+      networks:
+        - backend
+
+### kafka-manager ###########################################
+    kafka-manager:
+      image: sheepkiller/kafka-manager
+      ports:
+        - 9020:9000
+      environment:
+        ZK_HOSTS: zookeeper:2181
+      networks:
+        - backend
+
+
+### tarantool ###########################################
+    tarantool:
+      build: ./tarantool
+      volumes:
+        - ${DATA_PATH_HOST}/tarantool:/var/lib/tarantool
+        - ./tarantool/lua:/opt/tarantool
+      ports:
+        - ${TARANTOOL_PORT}:3301
+      networks:
+        - backend
+    tarantool-admin:
+      build: ./tarantool-admin
+      ports:
+        - ${TARANTOOL_ADMIN_PORT}:80
+      networks:
+        - backend

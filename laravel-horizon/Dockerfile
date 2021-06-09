@@ -23,23 +23,21 @@ RUN apk --update add wget \
   curl \
   git \
   build-base \
-  libmemcached-dev \
   libmcrypt-dev \
   libxml2-dev \
+  pcre-dev \
   zlib-dev \
   autoconf \
   cyrus-sasl-dev \
   libgsasl-dev \
-  supervisor \
   oniguruma-dev \
+  libressl \
+  libressl-dev \
+  supervisor \
   procps
 
-RUN docker-php-ext-install mysqli mbstring pdo pdo_mysql tokenizer xml pcntl
-RUN if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
-  pecl channel-update pecl.php.net && pecl install memcached-2.2.0 mcrypt-1.0.1 && docker-php-ext-enable memcached \
-;else \
-  pecl channel-update pecl.php.net && pecl install memcached mcrypt-1.0.1 && docker-php-ext-enable memcached \
-;fi
+RUN pecl channel-update pecl.php.net; \
+    docker-php-ext-install mysqli mbstring pdo pdo_mysql tokenizer xml pcntl
 
 # Add a non-root user to help install ffmpeg:
 ARG PUID=1000
@@ -74,23 +72,24 @@ RUN set -eux; if [ ${INSTALL_GNUPG} = true ]; then \
       docker-php-ext-enable gnupg; \
     fi
 
+#Install LDAP
+ARG INSTALL_LDAP=false;
+RUN set -eux; if [ ${INSTALL_LDAP} = true ]; then \
+      apk add --no-cache --no-progress openldap-dev; \
+      docker-php-ext-install ldap; \
+      php -m | grep -oiE '^ldap$'; \
+    fi
+
 #Install GD package:
 ARG INSTALL_GD=false
 RUN if [ ${INSTALL_GD} = true ]; then \
    apk add --update --no-cache freetype-dev libjpeg-turbo-dev jpeg-dev libpng-dev; \
-   if [ ${LARADOCK_PHP_VERSION} = "7.4" ]; then \
-      docker-php-ext-configure gd --with-freetype --with-jpeg; \
+   if [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "80000" ] || [ $(php -r "echo PHP_VERSION_ID - PHP_RELEASE_VERSION;") = "70400" ]; then \
+     docker-php-ext-configure gd --with-freetype --with-jpeg; \
    else \
-      docker-php-ext-configure gd --with-freetype-dir=/usr/lib/ --with-jpeg-dir=/usr/lib/ --with-png-dir=/usr/lib/; \
+     docker-php-ext-configure gd --with-freetype-dir=/usr/lib/ --with-jpeg-dir=/usr/lib/ --with-png-dir=/usr/lib/; \
    fi && \
    docker-php-ext-install gd \
-;fi
-
-#Install GMP package:
-ARG INSTALL_GMP=false
-RUN if [ ${INSTALL_GMP} = true ]; then \
-   apk add --update --no-cache gmp gmp-dev; \
-   docker-php-ext-install gmp \
 ;fi
 
 #Install ImageMagick package:
@@ -99,9 +98,8 @@ ARG IMAGEMAGICK_VERSION=latest
 ENV IMAGEMAGICK_VERSION ${IMAGEMAGICK_VERSION}
 RUN set -eux; \
   if [ ${INSTALL_IMAGEMAGICK} = true ]; then \
-    apk add --update --no-cache imagemagick-dev; \
+    apk add --update --no-cache imagemagick-dev imagemagick; \
     if [ $(php -r "echo PHP_MAJOR_VERSION;") = "8" ]; then \
-      apk add --update --no-cache git && \
       cd /tmp && \
       if [ ${IMAGEMAGICK_VERSION} = "latest" ]; then \
         git clone https://github.com/Imagick/imagick; \
@@ -120,6 +118,13 @@ RUN set -eux; \
     docker-php-ext-enable imagick; \
     php -m | grep -q 'imagick'; \
   fi
+
+#Install GMP package:
+ARG INSTALL_GMP=false
+RUN if [ ${INSTALL_GMP} = true ]; then \
+   apk add --update --no-cache gmp gmp-dev; \
+   docker-php-ext-install gmp \
+;fi
 
 #Install BCMath package:
 ARG INSTALL_BCMATH=false
@@ -158,10 +163,14 @@ RUN set -eux; \
 ARG INSTALL_PHPREDIS=false
 RUN if [ ${INSTALL_PHPREDIS} = true ]; then \
     # Install Php Redis Extension
-    printf "\n" | pecl install -o -f redis \
-    &&  rm -rf /tmp/pear \
-    &&  docker-php-ext-enable redis \
-;fi
+    if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+      printf "\n" | pecl install -o -f redis-4.3.0; \
+    else \
+      printf "\n" | pecl install -o -f redis; \
+    fi; \
+    rm -rf /tmp/pear; \
+    docker-php-ext-enable redis; \
+fi
 
 ARG INSTALL_FFMPEG=false
 RUN if [ ${INSTALL_FFMPEG} = true ]; then \
@@ -222,9 +231,14 @@ RUN if [ ${INSTALL_CASSANDRA} = true ]; then \
 # Install MongoDB drivers:
 ARG INSTALL_MONGO=false
 RUN if [ ${INSTALL_MONGO} = true ]; then \
-  pecl install mongodb \
-  && docker-php-ext-enable mongodb \
-  ;fi
+      if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+        pecl install mongo; \
+        docker-php-ext-enable mongo; \
+      else \
+        pecl install mongodb; \
+        docker-php-ext-enable mongodb; \
+      fi; \
+    fi
 
 ###########################################################################
 # YAML: extension
@@ -235,15 +249,19 @@ ARG INSTALL_YAML=false
 RUN if [ ${INSTALL_YAML} = true ]; then \
      apk --update add -U --no-cache --virtual temp yaml-dev \
      && apk add --no-cache yaml \
-     && docker-php-source extract \
-     && pecl channel-update pecl.php.net \
-     && pecl install yaml \
+     && docker-php-source extract; \
+      if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+        pecl install yaml-1.3.2; \
+      elif [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "0" ]; then \
+        pecl install yaml-2.0.4; \
+      else \
+        pecl install yaml; \
+      fi \
      && docker-php-ext-enable yaml \
      && pecl clear-cache \
      && docker-php-source delete \
      && apk del temp \
 ;fi
-
 
 ###########################################################################
 # PHP Memcached:
@@ -252,25 +270,20 @@ RUN if [ ${INSTALL_YAML} = true ]; then \
 ARG INSTALL_MEMCACHED=false
 
 RUN if [ ${INSTALL_MEMCACHED} = true ]; then \
+  apk --update add libmemcached-dev; \
   # Install the php memcached extension
   if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
-  curl -L -o /tmp/memcached.tar.gz "https://github.com/php-memcached-dev/php-memcached/archive/2.2.0.tar.gz"; \
+    pecl install memcached-2.2.0; \
   else \
-  curl -L -o /tmp/memcached.tar.gz "https://github.com/php-memcached-dev/php-memcached/archive/v3.1.4.tar.gz"; \
-  fi \
-  && mkdir -p memcached \
-  && tar -C memcached -zxvf /tmp/memcached.tar.gz --strip 1 \
-  && ( \
-  cd memcached \
-  && phpize \
-  && ./configure \
-  && make -j$(nproc) \
-  && make install \
-  ) \
-  && rm -r memcached \
-  && rm /tmp/memcached.tar.gz \
-  && docker-php-ext-enable memcached \
-  ;fi
+    pecl install memcached; \
+  fi; \
+  docker-php-ext-enable memcached; \
+  php -m | grep -r 'memcached'; \
+fi
+
+#--------------------------------------------------------------------------
+# Clean up
+#--------------------------------------------------------------------------
 
 RUN rm /var/cache/apk/* \
   && mkdir -p /var/www

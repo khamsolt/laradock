@@ -39,6 +39,7 @@ RUN set -xe; \
     pecl channel-update pecl.php.net && \
     apt-get install -yqq \
       apt-utils \
+      gnupg2 \
       git \
       #
       #--------------------------------------------------------------------------
@@ -83,6 +84,17 @@ RUN if [ ${INSTALL_BZ2} = true ]; then \
 ;fi
 
 ###########################################################################
+# Enchant:
+###########################################################################
+
+ARG INSTALL_ENCHANT=false
+RUN if [ ${INSTALL_ENCHANT} = true ]; then \
+  apt-get install -yqq libenchant-dev; \
+  docker-php-ext-install enchant; \
+  php -m | grep -oiE '^enchant$'; \
+fi
+
+###########################################################################
 # GMP (GNU Multiple Precision):
 ###########################################################################
 
@@ -110,6 +122,8 @@ RUN if [ ${INSTALL_GNUPG} = true ]; then \
       else \
         pecl install gnupg; \
       fi; \
+      docker-php-ext-enable gnupg; \
+      php -m | grep -q 'gnupg'; \
     fi
 
 ###########################################################################
@@ -396,27 +410,18 @@ RUN set -eux; \
 
 ARG INSTALL_AMQP=false
 
-RUN if [ ${INSTALL_AMQP} = true ]; then \
-    # download and install manually, to make sure it's compatible with ampq installed by pecl later
-    # install cmake first
-    apt-get -yqq install cmake && \
-    curl -L -o /tmp/rabbitmq-c.tar.gz https://github.com/alanxz/rabbitmq-c/archive/master.tar.gz && \
-    mkdir -p rabbitmq-c && \
-    tar -C rabbitmq-c -zxvf /tmp/rabbitmq-c.tar.gz --strip 1 && \
-    cd rabbitmq-c/ && \
-    mkdir _build && cd _build/ && \
-    cmake .. && \
-    cmake --build . --target install && \
-    # Install the amqp extension
-    if [ $(php -r "echo PHP_MAJOR_VERSION;") = "8" ]; then \
-      printf "\n" | pecl install amqp-1.11.0beta; \
-    else \
-      printf "\n" | pecl install amqp; \
-    fi && \
-    docker-php-ext-enable amqp && \
-    # Install the sockets extension
-    docker-php-ext-install sockets \
-;fi
+RUN set -eux; \
+    if [ ${INSTALL_AMQP} = true ]; then \
+      # # Install the amqp extension
+      apt-get -yqq install librabbitmq-dev; \
+      if [ $(php -r "echo PHP_MAJOR_VERSION;") = "8" ]; then \
+        pecl install amqp-1.11.0beta; \
+      else \
+        pecl install amqp; \
+      fi; \
+      docker-php-ext-enable amqp; \
+      php -m | grep -oiE '^amqp$'; \
+    fi
 
 ###########################################################################
 # CASSANDRA:
@@ -506,9 +511,9 @@ ARG INSTALL_MEMCACHED=false
 RUN if [ ${INSTALL_MEMCACHED} = true ]; then \
     # Install the php memcached extension
     if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
-      pecl install memcached-2.2.0; \
+      echo '' | pecl -q install memcached-2.2.0; \
     else \
-      pecl install memcached-3.1.3; \
+      echo '' | pecl -q install memcached; \
     fi \
     && docker-php-ext-enable memcached \
 ;fi
@@ -698,7 +703,7 @@ ARG INSTALL_MSSQL=false
 RUN set -eux; \
   if [ ${INSTALL_MSSQL} = true ]; then \
     if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
-      apt-get -y install freetds-dev libsybdb5 \
+      apt-get -yqq install freetds-dev libsybdb5 \
       && ln -s /usr/lib/x86_64-linux-gnu/libsybdb.so /usr/lib/libsybdb.so \
       && docker-php-ext-install mssql pdo_dblib \
       && php -m | grep -q 'mssql' \
@@ -712,14 +717,15 @@ RUN set -eux; \
       && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
       && curl https://packages.microsoft.com/config/debian/9/prod.list > /etc/apt/sources.list.d/mssql-release.list \
       && apt-get update -yqq \
-      # Install Dependencies
       && ACCEPT_EULA=Y apt-get install -yqq unixodbc unixodbc-dev libgss3 odbcinst msodbcsql17 locales \
       && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
-      # link local aliases
       && ln -sfn /etc/locale.alias /usr/share/locale/locale.alias \
       && locale-gen \
-      # Install pdo_sqlsrv and sqlsrv from PECL. Replace pdo_sqlsrv-4.1.8preview with preferred version.
-      && if [ $(php -r "echo PHP_MINOR_VERSION;") = "0" ]; then \
+      && if [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "2" ]; then \
+        pecl install pdo_sqlsrv-5.8.1 sqlsrv-5.8.1 \
+      ;elif [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "1" ]; then \
+        pecl install pdo_sqlsrv-5.6.1 sqlsrv-5.6.1 \
+      ;elif [ $(php -r "echo PHP_MAJOR_VERSION;") = "7" ] && [ $(php -r "echo PHP_MINOR_VERSION;") = "0" ]; then \
         pecl install pdo_sqlsrv-5.3.0 sqlsrv-5.3.0 \
       ;else \
         pecl install pdo_sqlsrv sqlsrv \
@@ -770,7 +776,8 @@ RUN if [ ${INSTALL_IMAGEMAGICK} = true ]; then \
     else \
       pecl install imagick; \
     fi && \
-    docker-php-ext-enable imagick \
+    docker-php-ext-enable imagick; \
+    php -m | grep -q 'imagick' \
 ;fi
 
 ###########################################################################
@@ -1066,6 +1073,50 @@ RUN if [ ${INSTALL_XMLRPC} = true ]; then \
     docker-php-ext-install xmlrpc; \
   fi \
 ;fi
+
+###########################################################################
+# PHP DECIMAL:
+###########################################################################
+
+USER root
+
+ARG INSTALL_PHPDECIMAL=false
+
+RUN if [ ${INSTALL_PHPDECIMAL} = true ]; then \
+    if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+      echo 'decimal not support PHP 5.6'; \
+    else \
+      apt-get install -yqq libmpdec-dev \
+      && pecl install decimal \
+      && docker-php-ext-enable decimal \
+      && php -m | grep -q 'decimal' \
+    ;fi \
+;fi
+
+###########################################################################
+# zookeeper
+###########################################################################
+ARG INSTALL_ZOOKEEPER=false
+
+RUN set -eux; \
+    if [ ${INSTALL_ZOOKEEPER} = true ]; then \
+    apt install -yqq libzookeeper-mt-dev; \
+    if [ $(php -r "echo PHP_MAJOR_VERSION;") = "8" ]; then \
+      curl -L -o /tmp/php-zookeeper.tar.gz https://github.com/php-zookeeper/php-zookeeper/archive/master.tar.gz; \
+      mkdir -p /tmp/php-zookeeper; \
+      tar -C /tmp/php-zookeeper -zxvf /tmp/php-zookeeper.tar.gz --strip 1; \
+      cd /tmp/php-zookeeper; \
+      phpize && ./configure && make && make install;\
+    else \
+      if [ $(php -r "echo PHP_MAJOR_VERSION;") = "5" ]; then \
+        pecl install zookeeper-0.5.0; \
+      else \
+        pecl install zookeeper-0.7.2; \
+      fi; \
+    fi; \
+    docker-php-ext-enable zookeeper; \
+    php -m | grep -q 'zookeeper'; \
+    fi
 
 ###########################################################################
 # New Relic for PHP:
